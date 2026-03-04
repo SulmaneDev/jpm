@@ -3,6 +3,11 @@
   "version": "1.0.0",
   "description": "Joint Package Manager — Joint, universal, advanced, and blazing fast package manager for Node.js and Bun.",
   "main": "src/index.js",
+  "type": "commonjs",
+  "private": false,
+  "exports": {
+    ".": "./src/index.js"
+  },
   "bin": {
     "jpm": "./bin/jpm.js"
   },
