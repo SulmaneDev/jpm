@@ -1,0 +1,12 @@
+node_modules/
+tests/
+test/
+.github/
+.gitignore
+.editorconfig
+package-lock.json
+README.md (usually included)
+LICENSE.md (usually included)
+CHANGELOG.md (usually included)
+SECURITY.md
+CONTRIBUTING.md

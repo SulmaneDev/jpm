@@ -1,0 +1,47 @@
+{
+  "name": "jpm",
+  "version": "1.0.0",
+  "description": "Joint Package Manager — Joint, universal, advanced, and blazing fast package manager for Node.js and Bun.",
+  "main": "src/index.js",
+  "bin": {
+    "jpm": "./bin/jpm.js"
+  },
+  "scripts": {
+    "test": "jest",
+    "lint": "node --check src/**/*.js"
+  },
+  "keywords": [
+    "package-manager",
+    "npm",
+    "javascript",
+    "node",
+    "cli",
+    "fast",
+    "secure"
+  ],
+  "author": "Muhammad Sulman <whomaderules@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/whomaderules/jpm.git"
+  },
+  "bugs": {
+    "url": "https://github.com/whomaderules/jpm/issues"
+  },
+  "homepage": "https://github.com/whomaderules/jpm#readme",
+  "dependencies": {
+    "tar": "^6.2.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "src",
+    "bin",
+    "LICENSE.md",
+    "README.md"
+  ]
+}
