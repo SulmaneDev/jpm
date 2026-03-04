@@ -1,6 +1,6 @@
 {
   "name": "jpm",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Joint Package Manager — Joint, universal, advanced, and blazing fast package manager for Node.js and Bun.",
   "main": "src/index.js",
   "type": "commonjs",
