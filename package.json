@@ -28,12 +28,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/whomaderules/jpm.git"
+    "url": "git+https://github.com/SulmaneDev/jpm.git"
   },
   "bugs": {
-    "url": "https://github.com/whomaderules/jpm/issues"
+    "url": "https://github.com/SulmaneDev/jpm/issues"
   },
-  "homepage": "https://github.com/whomaderules/jpm#readme",
+  "homepage": "https://github.com/SulmaneDev/jpm#readme",
   "dependencies": {
     "tar": "^6.2.0"
   },
