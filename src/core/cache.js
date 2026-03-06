@@ -2,116 +2,217 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const crypto = require('node:crypto');
 const config = require('../utils/config');
 const { mkdirp, rimraf } = require('../utils/fs');
 const logger = require('../utils/logger');
 
 /**
- * Disk cache at ~/.jpm/cache/<name>/<version>.tgz
- * Also stores metadata JSON alongside: <name>/<version>.json
+ * Cache class handles persistent disk caching of package tarballs and metadata.
+ * Packages are stored at `<cacheDir>/<name>/<version>.tgz`.
+ * Scoped packages handle '@' by replacing '/' with '__SCOPE__'.
  */
-
-function cacheRoot() {
-    return config.cacheDir;
-}
-
-function tgzPath(name, version) {
-    const safeName = name.replace('/', '__SCOPE__');
-    return path.join(cacheRoot(), safeName, `${version}.tgz`);
-}
-
-function metaPath(name, version) {
-    const safeName = name.replace('/', '__SCOPE__');
-    return path.join(cacheRoot(), safeName, `${version}.json`);
-}
-
-async function get(name, version) {
-    const p = tgzPath(name, version);
-    if (fs.existsSync(p)) {
-        logger.verbose(`cache hit ${name}@${version}`);
-        return p;
+class Cache {
+    /**
+     * Creates an instance of the Cache.
+     * @param {Object} [options={}] - Configuration options for the cache
+     */
+    constructor(options = {}) {
+        this._config = options.config || config;
     }
-    return null;
-}
 
-async function set(name, version, srcTgz) {
-    const dest = tgzPath(name, version);
-    mkdirp(path.dirname(dest));
-    fs.copyFileSync(srcTgz, dest);
-    logger.verbose(`cache store ${name}@${version}`);
-}
+    /**
+     * Returns the root directory for the cache.
+     * @returns {string} Absolute path to the cache directory
+     */
+    get cacheRoot() {
+        return this._config.cacheDir;
+    }
 
-async function setMeta(name, version, meta) {
-    const p = metaPath(name, version);
-    mkdirp(path.dirname(p));
-    fs.writeFileSync(p, JSON.stringify(meta, null, 2), 'utf8');
-}
-
-async function getMeta(name, version) {
-    const p = metaPath(name, version);
-    try { return JSON.parse(fs.readFileSync(p, 'utf8')); }
-    catch { return null; }
-}
-
-function has(name, version) {
-    return fs.existsSync(tgzPath(name, version));
-}
-
-function clear(name, version) {
-    if (name && version) {
-        rimraf(tgzPath(name, version));
-        rimraf(metaPath(name, version));
-    } else if (name) {
+    /**
+     * Resolves the absolute path for a package tarball in the cache.
+     * 
+     * @param {string} name - The package name
+     * @param {string} version - The package version
+     * @returns {string} Absolute path to the .tgz file
+     * @private
+     */
+    _tgzPath(name, version) {
         const safeName = name.replace('/', '__SCOPE__');
-        rimraf(path.join(cacheRoot(), safeName));
-    } else {
-        // Clear entire cache
-        rimraf(cacheRoot());
-        logger.success('Cache cleared');
+        return path.join(this.cacheRoot, safeName, `${version}.tgz`);
     }
-}
 
-function stats() {
-    const root = cacheRoot();
-    if (!fs.existsSync(root)) return { packages: 0, size: 0 };
+    /**
+     * Resolves the absolute path for a package metadata JSON in the cache.
+     * 
+     * @param {string} name - The package name
+     * @param {string} version - The package version
+     * @returns {string} Absolute path to the .json file
+     * @private
+     */
+    _metaPath(name, version) {
+        const safeName = name.replace('/', '__SCOPE__');
+        return path.join(this.cacheRoot, safeName, `${version}.json`);
+    }
 
-    let packages = 0;
-    let size = 0;
+    /**
+     * Retrieves a package tarball from the cache if it exists.
+     * 
+     * @param {string} name - Package name
+     * @param {string} version - Package version
+     * @returns {Promise<string|null>} Path to the cached tarball, or null if not found
+     */
+    async get(name, version) {
+        const p = this._tgzPath(name, version);
+        if (fs.existsSync(p)) {
+            logger.verbose(`cache hit ${name}@${version}`);
+            return p;
+        }
+        return null;
+    }
 
-    function walk(dir) {
-        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-            const full = path.join(dir, entry.name);
-            if (entry.isDirectory()) {
-                walk(full);
-            } else {
-                const s = fs.statSync(full);
-                size += s.size;
-                if (entry.name.endsWith('.tgz')) packages++;
-            }
+    /**
+     * Stores a package tarball in the cache.
+     * 
+     * @param {string} name - Package name
+     * @param {string} version - Package version
+     * @param {string} srcTgz - Path to the source tarball to be copied
+     * @returns {Promise<void>}
+     */
+    async set(name, version, srcTgz) {
+        const dest = this._tgzPath(name, version);
+        mkdirp(path.dirname(dest));
+        fs.copyFileSync(srcTgz, dest);
+        logger.verbose(`cache store ${name}@${version}`);
+    }
+
+    /**
+     * Stores package metadata in the cache.
+     * 
+     * @param {string} name - Package name
+     * @param {string} version - Package version
+     * @param {Object} meta - Metadata object to be serialized
+     * @returns {Promise<void>}
+     */
+    async setMeta(name, version, meta) {
+        const p = this._metaPath(name, version);
+        mkdirp(path.dirname(p));
+        fs.writeFileSync(p, JSON.stringify(meta, null, 2), 'utf8');
+    }
+
+    /**
+     * Retrieves package metadata from the cache.
+     * 
+     * @param {string} name - Package name
+     * @param {string} version - Package version
+     * @returns {Promise<Object|null>} Decoded metadata object, or null if not found/invalid
+     */
+    async getMeta(name, version) {
+        const p = this._metaPath(name, version);
+        try {
+            return JSON.parse(fs.readFileSync(p, 'utf8'));
+        } catch {
+            return null;
         }
     }
 
-    try { walk(root); } catch { }
-    return { packages, size, root };
-}
+    /**
+     * Checks if a package version exists in the cache.
+     * 
+     * @param {string} name - Package name
+     * @param {string} version - Package version
+     * @returns {boolean} True if the tarball exists in cache
+     */
+    has(name, version) {
+        return fs.existsSync(this._tgzPath(name, version));
+    }
 
-function list() {
-    const root = cacheRoot();
-    if (!fs.existsSync(root)) return [];
-    const result = [];
-    for (const scopeOrName of fs.readdirSync(root)) {
-        const dir = path.join(root, scopeOrName);
-        if (!fs.statSync(dir).isDirectory()) continue;
-        for (const file of fs.readdirSync(dir)) {
-            if (file.endsWith('.tgz')) {
-                const version = file.replace('.tgz', '');
-                const name = scopeOrName.replace('__SCOPE__', '/');
-                result.push({ name, version });
-            }
+    /**
+     * Clears specific items or the entire cache.
+     * 
+     * @param {string} [name] - Optional package name to clear
+     * @param {string} [version] - Optional version to clear (requires name)
+     */
+    clear(name, version) {
+        if (name && version) {
+            rimraf(this._tgzPath(name, version));
+            rimraf(this._metaPath(name, version));
+        } else if (name) {
+            const safeName = name.replace('/', '__SCOPE__');
+            rimraf(path.join(this.cacheRoot, safeName));
+        } else {
+            // Clear entire cache
+            rimraf(this.cacheRoot);
+            logger.success('Cache cleared');
         }
     }
-    return result;
+
+    /**
+     * Calculates cache statistics (total packages and disk usage).
+     * 
+     * @returns {Object} { packages: number, size: number, root: string }
+     */
+    stats() {
+        const root = this.cacheRoot;
+        if (!fs.existsSync(root)) return { packages: 0, size: 0, root };
+
+        let packages = 0;
+        let size = 0;
+
+        const walk = (dir) => {
+            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+                const full = path.join(dir, entry.name);
+                if (entry.isDirectory()) {
+                    walk(full);
+                } else {
+                    const s = fs.statSync(full);
+                    size += s.size;
+                    if (entry.name.endsWith('.tgz')) packages++;
+                }
+            }
+        };
+
+        try {
+            walk(root);
+        } catch { }
+        return { packages, size, root };
+    }
+
+    /**
+     * Lists all packages and versions currently in the cache.
+     * 
+     * @returns {{ name: string, version: string }[]} Array of package descriptors
+     */
+    list() {
+        const root = this.cacheRoot;
+        if (!fs.existsSync(root)) return [];
+        const result = [];
+        for (const scopeOrName of fs.readdirSync(root)) {
+            const dir = path.join(root, scopeOrName);
+            if (!fs.statSync(dir).isDirectory()) continue;
+            for (const file of fs.readdirSync(dir)) {
+                if (file.endsWith('.tgz')) {
+                    const version = file.replace('.tgz', '');
+                    const name = scopeOrName.replace('__SCOPE__', '/');
+                    result.push({ name, version });
+                }
+            }
+        }
+        return result;
+    }
 }
 
-module.exports = { get, set, getMeta, setMeta, has, clear, stats, list };
+// Singleton instance for backward compatibility
+const defaultCache = new Cache();
+
+module.exports = {
+    Cache,
+    get: defaultCache.get.bind(defaultCache),
+    set: defaultCache.set.bind(defaultCache),
+    getMeta: defaultCache.getMeta.bind(defaultCache),
+    setMeta: defaultCache.setMeta.bind(defaultCache),
+    has: defaultCache.has.bind(defaultCache),
+    clear: defaultCache.clear.bind(defaultCache),
+    stats: defaultCache.stats.bind(defaultCache),
+    list: defaultCache.list.bind(defaultCache),
+};
+

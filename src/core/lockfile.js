@@ -1,6 +1,7 @@
 'use strict';
 
 const path = require('node:path');
+const fs = require('node:fs');
 const { readJSONSafe, writeJSON } = require('../utils/fs');
 const { hashString } = require('../security/integrity');
 
@@ -8,28 +9,28 @@ const LOCK_VERSION = 1;
 const LOCK_FILE = 'jpm-lock.json';
 
 /**
- * jpm-lock.json structure:
- * {
- *   "lockVersion": 1,
- *   "packages": {
- *     "express@4.18.2": {
- *       "name": "express",
- *       "version": "4.18.2",
- *       "resolved": "https://registry.npmjs.org/express/-/express-4.18.2.tgz",
- *       "integrity": "sha512-...",
- *       "dependencies": { "accepts": "^1.3.8", ... }
- *     },
- *     ...
- *   }
- * }
+ * Manages the jpm-lock.json file for deterministic installations.
+ * The lockfile stores exact versions and integrity hashes for all dependencies.
  */
-
 class Lockfile {
+    /**
+     * Creates an instance of the Lockfile.
+     * 
+     * @param {string} projectRoot - The absolute path to the project root directory
+     */
     constructor(projectRoot) {
+        /** @type {string} */
         this.filePath = path.join(projectRoot, LOCK_FILE);
+        /** @type {Object} */
         this._data = this._load();
     }
 
+    /**
+     * Loads the lockfile data from disk or returns a default structure.
+     * 
+     * @returns {Object} The lockfile data
+     * @private
+     */
     _load() {
         const data = readJSONSafe(this.filePath, null);
         if (!data) return { lockVersion: LOCK_VERSION, packages: {} };
@@ -37,7 +38,11 @@ class Lockfile {
     }
 
     /**
-     * Build/update lock file from a resolved package map
+     * Builds or updates the lockfile data from a resolved dependency map.
+     * Sorts keys for consistent output.
+     * 
+     * @param {Map<string, Object>} resolvedMap - Map of resolved package metadata
+     * @returns {this} The current instance for chaining
      */
     update(resolvedMap) {
         const packages = {};
@@ -65,7 +70,9 @@ class Lockfile {
     }
 
     /**
-     * Verifies if the lockfile has been tampered with.
+     * Verifies the cryptographic integrity of the lockfile packages.
+     * 
+     * @returns {boolean} True if the integrity hash matches the current package data
      */
     verify() {
         if (!this._data.integrity || !this._data.packages) return true;
@@ -73,7 +80,14 @@ class Lockfile {
         return actual === this._data.integrity;
     }
 
-    /** Add or update a single package entry */
+    /**
+     * Adds or updates a single package entry in the lockfile data.
+     * 
+     * @param {string} name - Package name
+     * @param {string} version - Package version
+     * @param {Object} meta - Package metadata
+     * @returns {this} The current instance for chaining
+     */
     setPackage(name, version, meta) {
         const key = `${name}@${version}`;
         this._data.packages[key] = {
@@ -87,42 +101,75 @@ class Lockfile {
         return this;
     }
 
-    /** Remove a package entry */
+    /**
+     * Removes a package entry from the lockfile data.
+     * 
+     * @param {string} name - Package name
+     * @param {string} version - Package version
+     * @returns {this} The current instance for chaining
+     */
     removePackage(name, version) {
         const key = `${name}@${version}`;
         delete this._data.packages[key];
         return this;
     }
 
-    /** Look up a specific package in the lock file */
+    /**
+     * Retrieves a specific package entry from the lockfile data.
+     * 
+     * @param {string} name - Package name
+     * @param {string} version - Package version
+     * @returns {Object|null} The package entry or null if not found
+     */
     getPackage(name, version) {
         return this._data.packages[`${name}@${version}`] || null;
     }
 
-    /** Check whether the lock file has a resolved entry for name@range */
+    /**
+     * Checks if the lockfile contains a specific package version.
+     * 
+     * @param {string} name - Package name
+     * @param {string} version - Package version
+     * @returns {boolean} True if the package version exists
+     */
     hasPackage(name, version) {
         return Boolean(this._data.packages[`${name}@${version}`]);
     }
 
-    /** Return all locked packages as array */
+    /**
+     * Returns an array of all package entries stored in the lockfile.
+     * 
+     * @returns {Object[]} Array of package entry objects
+     */
     allPackages() {
         return Object.values(this._data.packages);
     }
 
-    /** Write lock file to disk */
+    /**
+     * Writes the current lockfile data to disk.
+     * 
+     * @returns {this} The current instance for chaining
+     */
     save() {
         writeJSON(this.filePath, this._data, 2);
         return this;
     }
 
-    /** Raw data */
+    /**
+     * Returns the raw lockfile data structure.
+     * @type {Object}
+     */
     get data() { return this._data; }
 
-    /** Whether a lock file exists */
+    /**
+     * Checks if the lockfile exists on the filesystem.
+     * 
+     * @returns {boolean} True if the lockfile exists
+     */
     exists() {
-        const fs = require('node:fs');
         return fs.existsSync(this.filePath);
     }
 }
 
 module.exports = Lockfile;
+

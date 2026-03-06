@@ -6,35 +6,62 @@ const system = require('../utils/system');
 const logger = require('../utils/logger');
 
 /**
- * Resolves a full dependency tree given a root package.json dependencies map.
+ * Resolves a full dependency tree given a root package configuration.
  *
- * Returns a flat map: { "name@version" => { name, version, resolved, integrity, dependencies } }
- * Also detects circular dependencies and performs basic deduplication / hoisting.
+ * This class handles recursive dependency resolution, version satisfaction,
+ * aliasing (npm: protocol), circular dependency detection, and deduplication.
+ * 
+ * Performance is optimized using parallel resolution and an in-flight request tracker
+ * to prevent redundant registry queries for the same package/range pair.
  */
 class Resolver {
     /**
      * Creates an instance of the Resolver.
-     * Initializes maps for resolved packages, in-flight requests, and the circular dependency stack.
+     * Initializes internal state for resolution tracking.
      */
     constructor() {
-        /** @type {Map<string, object>} Map of "name@version" to package metadata */
+        /** 
+         * Map of "name@version" to resolved package metadata.
+         * @type {Map<string, Object>} 
+         * @private
+         */
         this._resolved = new Map();
-        /** @type {Map<string, Promise>} Map of "name@range" to active resolution promises */
+
+        /** 
+         * Map of "name@range" to active resolution promises to prevent redundant work.
+         * @type {Map<string, Promise>} 
+         * @private
+         */
         this._inFlight = new Map();
-        /** @type {string[]} Stack of package names being resolved to detect cycles */
+
+        /** 
+         * Stack of resolved keys ("name@version") being processed in the current recursion path.
+         * Used for circular dependency detection.
+         * @type {string[]} 
+         * @private
+         */
         this._stack = [];
+
+        /** @type {number} */
+        this._totalToResolve = 0;
+        /** @type {number} */
+        this._resolvedCount = 0;
     }
 
     /**
      * Resolves a set of dependencies recursively.
      * 
-     * @param {Object.<string, string>} [deps={}] - Regular dependencies (name to semver range)
+     * @param {Object.<string, string>} [deps={}] - Production dependencies
      * @param {Object.<string, string>} [devDeps={}] - Development dependencies
      * @param {Object.<string, string>} [peerDeps={}] - Peer dependencies
-     * @returns {Promise<Map<string, object>>} A promise that resolves to the flat map of resolved packages
+     * @param {Function} [onProgress] - Optional progress callback (current, total)
+     * @returns {Promise<Map<string, Object>>} A promise that resolves to the flat map of resolved packages
+     * @example
+     * const resolver = new Resolver();
+     * const resolved = await resolver.resolve({ express: '^4.17.1' });
      */
     async resolve(deps = {}, devDeps = {}, peerDeps = {}, onProgress) {
-        const all = { ...deps, ...devDeps };
+        const all = { ...deps, ...devDeps, ...peerDeps };
         this._totalToResolve = Object.keys(all).length;
         this._resolvedCount = 0;
         this._onProgress = onProgress;
@@ -45,15 +72,21 @@ class Resolver {
         return this._resolved;
     }
 
+    /**
+     * Initiates or joins an existing resolution for a single package and range.
+     * 
+     * @param {string} name - Package name
+     * @param {string} range - Semver range or alias
+     * @returns {Promise<void>}
+     * @private
+     */
     async _resolveOne(name, range) {
         const key = `${name}@${range}`;
 
-        // Already in flight? Await the existing promise.
         if (this._inFlight.has(key)) {
             return this._inFlight.get(key);
         }
 
-        // Create a new resolution promise and store it in _inFlight.
         const p = this._doResolve(name, range);
         this._inFlight.set(key, p);
 
@@ -63,27 +96,28 @@ class Resolver {
             this._onProgress?.(this._resolvedCount, this._totalToResolve);
             return p;
         } finally {
-            // No longer in flight once the promise settles.
             this._inFlight.delete(key);
         }
     }
 
     /**
      * Internal resolution logic for a single package and range.
+     * Handles npm aliases and recursive resolution of transitive dependencies.
      * 
-     * @param {string} name - The name of the package as declared in dependencies
+     * @param {string} name - The name as declared in dependencies
      * @param {string} range - The semver range or npm:alias
+     * @returns {Promise<void>}
      * @protected
      */
     async _doResolve(name, range) {
-        // Handle npm: alias protocol (e.g., "wrap-ansi-cjs": "npm:wrap-ansi@^7.0.0")
         let targetName = name;
         let targetRange = range === '' || range === '*' || range === 'latest' ? 'latest' : range;
 
+        // Handle npm: alias protocol (e.g., "pkg": "npm:real-pkg@^1.0.0")
         if (targetRange.startsWith('npm:')) {
             const parts = targetRange.slice(4).split('@');
-            // Handle scoped packages in alias: npm:@scope/pkg@range
             if (targetRange.slice(4).startsWith('@')) {
+                // Scoped alias: npm:@scope/pkg@range
                 targetName = '@' + parts[1];
                 targetRange = parts[2] || 'latest';
             } else {
@@ -105,13 +139,10 @@ class Resolver {
                 throw new Error(`No version of ${targetName} satisfies "${targetRange}". Available: ${versions.slice(-5).join(', ')}`);
             }
 
-            // The resolved key uses the original dependency name to allow multiple aliases of the same package
             const resolvedKey = `${name}@${chosen}`;
 
-            // Check if already resolved to avoid redundant work
+            // Check if already resolved globally or in current path
             if (this._resolved.has(resolvedKey)) return;
-
-            // Detect circular dependencies on the current resolution path
             if (this._stack.includes(resolvedKey)) return;
 
             // 3. Retrieve exhaustive version metadata
@@ -119,8 +150,8 @@ class Resolver {
 
             // 4. Map metadata to internal representation
             const metaToStore = {
-                name: targetName, // The actual package name for installation
-                alias: name !== targetName ? name : undefined, // Alias used in package.json
+                name: targetName,
+                alias: name !== targetName ? name : undefined,
                 version: chosen,
                 resolved: meta.dist?.tarball,
                 integrity: meta.dist?.integrity || meta.dist?.shasum,
@@ -138,7 +169,6 @@ class Resolver {
             // 5. Recursively resolve transitive dependencies
             this._stack.push(resolvedKey);
 
-            // Combine normal and optional dependencies for resolution
             const dependencies = {
                 ...metaToStore.deps,
                 ...metaToStore.optDeps
@@ -146,13 +176,9 @@ class Resolver {
 
             await Promise.all(
                 Object.entries(dependencies).map(async ([depName, depRange]) => {
-                    // Check if it's an optional dependency and if it's compatible with current system
+                    // Pre-check for optional dependency compatibility
                     if (metaToStore.optDeps[depName]) {
                         try {
-                            // We need the packument to see the OS/CPU of the potential version
-                            // Actually, a better way is to resolve it first, then check compatibility
-                            // before resolving its own transitive dependencies.
-                            // But to be even faster, we can check the packument's version metadata.
                             const packument = await registry.getPackument(depName);
                             const version = semver.maxSatisfying(Object.keys(packument.versions || {}), depRange);
                             if (version) {
@@ -163,7 +189,7 @@ class Resolver {
                                 }
                             }
                         } catch (e) {
-                            // If packument fetch fails, we'll let _resolveOne handle it normally
+                            // If check fails, fall through to normal resolution
                         }
                     }
                     return this._resolveOne(depName, depRange);
@@ -177,10 +203,9 @@ class Resolver {
         }
     }
 
-    // ── Analysis helpers ────────────────────────────────────────────────────────
-
     /**
-     * Identifies package name collisions and suggests resolution to the highest version.
+     * Identifies package name collisions and returns a summary.
+     * Used for post-resolution analysis and potential hoisting.
      * 
      * @returns {Object[]} List of duplicate packages and their versions
      */
@@ -200,9 +225,9 @@ class Resolver {
     }
 
     /**
-     * Traverses the resolved dependency graph to identify circular references.
+     * Performs a Depth-First Search on the resolved graph to detect cycles.
      * 
-     * @returns {string[]} An array of strings describing the detected cycles (e.g., "A → B → A")
+     * @returns {string[]} An array of strings describing detected cycles (e.g., "A → B → A")
      */
     findCircular() {
         const cycles = [];
@@ -221,9 +246,7 @@ class Resolver {
 
             const meta = this._resolved.get(key);
             if (meta) {
-                // We must match dependency ranges to their ACTUAL resolved versions in this._resolved
                 for (const [depName, depRange] of Object.entries(meta.deps)) {
-                    // Find the version of depName that was actually resolved
                     for (const [resKey, resMeta] of this._resolved) {
                         if (resMeta.name === depName && semver.satisfies(resMeta.version, depRange)) {
                             dfs(resKey);
@@ -246,3 +269,4 @@ class Resolver {
 }
 
 module.exports = Resolver;
+

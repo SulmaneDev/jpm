@@ -238,7 +238,13 @@ async function main() {
 
     const handler = loader();
     try {
-        await handler(args, flags, command);
+        if (typeof handler === 'function' && handler.prototype instanceof (require('../src/commands/base-command'))) {
+            const instance = new handler(command);
+            await instance.run(args, flags);
+        } else {
+            // Backward compatibility for functional commands
+            await handler(args, flags, command);
+        }
     } catch (err) {
         if (flags.loglevel === 'debug' || flags.loglevel === 'verbose') {
             logger.error(err.stack || err.message);

@@ -2,102 +2,148 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const BaseCommand = require('./base-command');
 const PackageJSON = require('../core/package-json');
 const { formatBytes } = require('../utils/fs');
-const logger = require('../utils/logger');
 
-module.exports = async function list(args, flags) {
-    const cwd = process.cwd();
-    const depth = parseInt(flags.depth ?? flags.d ?? '0', 10);
-    const json = flags.json;
-    const nodeModules = path.join(cwd, 'node_modules');
-
-    const pkgJson = PackageJSON.fromDir(cwd);
-
-    if (!fs.existsSync(nodeModules)) {
-        logger.warn('No node_modules found. Run `jpm install` first.');
-        return;
+/**
+ * ListCommand handles the 'jpm list', 'jpm ls', and 'jpm peek' commands.
+ * It visualizes the installed dependency tree and package sizes.
+ */
+class ListCommand extends BaseCommand {
+    constructor() {
+        super('list');
     }
 
-    // Collect top-level installed packages
-    const installed = [];
-    for (const entry of fs.readdirSync(nodeModules, { withFileTypes: true })) {
-        if (entry.name.startsWith('.')) continue;
+    /**
+     * Executes the listing and visualization of dependencies.
+     * 
+     * @param {string[]} args - Optional arguments
+     * @param {Object} flags - CLI flags (e.g., --depth, --json)
+     * @returns {Promise<void>}
+     */
+    async run(args, flags) {
+        const cwd = process.cwd();
+        const depth = parseInt(flags.depth ?? flags.d ?? '0', 10);
+        const isJson = flags.json;
+        const nodeModules = path.join(cwd, 'node_modules');
 
-        if (entry.name.startsWith('@') && entry.isDirectory()) {
-            const scopeDir = path.join(nodeModules, entry.name);
-            for (const scoped of fs.readdirSync(scopeDir, { withFileTypes: true })) {
-                const pkg = readPkg(path.join(scopeDir, scoped.name));
+        const pkgJson = PackageJSON.fromDir(cwd);
+
+        if (!fs.existsSync(nodeModules)) {
+            this.logger.warn('No node_modules found. Run `jpm install` first.');
+            return;
+        }
+
+        // 1. Collect installed packages
+        const installed = [];
+        for (const entry of fs.readdirSync(nodeModules, { withFileTypes: true })) {
+            if (entry.name.startsWith('.')) continue;
+
+            if (entry.name.startsWith('@') && entry.isDirectory()) {
+                const scopeDir = path.join(nodeModules, entry.name);
+                for (const scoped of fs.readdirSync(scopeDir, { withFileTypes: true })) {
+                    const pkg = this._readPkg(path.join(scopeDir, scoped.name));
+                    if (pkg) installed.push(pkg);
+                }
+            } else if (entry.isDirectory()) {
+                const pkg = this._readPkg(path.join(nodeModules, entry.name));
                 if (pkg) installed.push(pkg);
             }
-        } else if (entry.isDirectory()) {
-            const pkg = readPkg(path.join(nodeModules, entry.name));
-            if (pkg) installed.push(pkg);
-        }
-    }
-
-    // Sort alphabetically
-    installed.sort((a, b) => a.name.localeCompare(b.name));
-
-    if (json) {
-        process.stdout.write(JSON.stringify({ name: pkgJson.name, dependencies: toObj(installed) }, null, 2) + '\n');
-        return;
-    }
-
-    logger.log(`\n${logger.c.bold(pkgJson.name)}@${pkgJson.version}`);
-
-    const directDeps = new Set([
-        ...Object.keys(pkgJson.dependencies),
-        ...Object.keys(pkgJson.devDependencies),
-    ]);
-
-    const total = installed.length;
-    let totalSize = 0;
-
-    for (let i = 0; i < installed.length; i++) {
-        const pkg = installed[i];
-        const isLast = i === installed.length - 1;
-        const isDir = directDeps.has(pkg.name);
-        const devMark = Object.keys(pkgJson.devDependencies).includes(pkg.name)
-            ? logger.c.gray(' dev')
-            : '';
-
-        const conn = isLast ? '└── ' : '├── ';
-        const nameStr = logger.c.cyan(pkg.name);
-        const verStr = logger.c.gray(`@${pkg.version}`);
-        logger.log(`${conn}${nameStr}${verStr}${devMark}`);
-
-        if (depth > 0 && pkg.dependencies) {
-            const subDeps = Object.entries(pkg.dependencies);
-            subDeps.forEach(([depName, depRange], j) => {
-                const isLastSub = j === subDeps.length - 1;
-                const ext = isLast ? '    ' : '│   ';
-                const subConn = isLastSub ? '└── ' : '├── ';
-                logger.log(`${ext}${subConn}${logger.c.gray(depName)} ${logger.c.gray(depRange)}`);
-            });
         }
 
-        totalSize += pkg.size || 0;
-    }
+        // 2. Sort results alphabetically
+        installed.sort((a, b) => a.name.localeCompare(b.name));
 
-    logger.log(`\n${total} packages  ${formatBytes(totalSize)}`);
-};
+        // 3. Handle JSON output mode
+        if (isJson) {
+            process.stdout.write(JSON.stringify({
+                name: pkgJson.name,
+                dependencies: this._toObj(installed)
+            }, null, 2) + '\n');
+            return;
+        }
 
-function readPkg(dir) {
-    const f = path.join(dir, 'package.json');
-    try {
-        const data = JSON.parse(fs.readFileSync(f, 'utf8'));
-        let size = 0;
-        try {
-            for (const file of fs.readdirSync(dir)) {
-                const s = fs.statSync(path.join(dir, file));
-                if (s.isFile()) size += s.size;
+        // 4. Render terminal tree view
+        this.logger.log(`\n${this.logger.c.bold(pkgJson.name)}@${pkgJson.version}`);
+
+        const directDeps = new Set([
+            ...Object.keys(pkgJson.dependencies),
+            ...Object.keys(pkgJson.devDependencies),
+        ]);
+
+        const total = installed.length;
+        let totalSize = 0;
+
+        for (let i = 0; i < installed.length; i++) {
+            const pkg = installed[i];
+            const isLast = i === installed.length - 1;
+            const devMark = Object.keys(pkgJson.devDependencies).includes(pkg.name)
+                ? this.logger.c.gray(' dev')
+                : '';
+
+            const conn = isLast ? '└── ' : '├── ';
+            const nameStr = this.logger.c.cyan(pkg.name);
+            const verStr = this.logger.c.gray(`@${pkg.version}`);
+            this.logger.log(`${conn}${nameStr}${verStr}${devMark}`);
+
+            if (depth > 0 && pkg.dependencies) {
+                const subDeps = Object.entries(pkg.dependencies);
+                subDeps.forEach(([depName, depRange], j) => {
+                    const isLastSub = j === subDeps.length - 1;
+                    const ext = isLast ? '    ' : '│   ';
+                    const subConn = isLastSub ? '└── ' : '├── ';
+                    this.logger.log(`${ext}${subConn}${this.logger.c.gray(depName)} ${this.logger.c.gray(depRange)}`);
+                });
             }
-        } catch { }
-        return { name: data.name, version: data.version, dependencies: data.dependencies, size };
-    } catch { return null; }
+
+            totalSize += pkg.size || 0;
+        }
+
+        this.logger.log(`\n${total} packages  ${formatBytes(totalSize)}`);
+    }
+
+    /**
+     * Reads package metadata and calculates directory size.
+     * 
+     * @param {string} dir - Directory path to the package
+     * @returns {Object|null} Package data object or null on failure
+     * @private
+     */
+    _readPkg(dir) {
+        const pkgJsonFile = path.join(dir, 'package.json');
+        try {
+            const data = JSON.parse(fs.readFileSync(pkgJsonFile, 'utf8'));
+            let size = 0;
+            try {
+                // Shallow size calculation (top-level files only)
+                for (const file of fs.readdirSync(dir)) {
+                    const s = fs.statSync(path.join(dir, file));
+                    if (s.isFile()) size += s.size;
+                }
+            } catch (err) { }
+            return {
+                name: data.name,
+                version: data.version,
+                dependencies: data.dependencies,
+                size
+            };
+        } catch (err) {
+            return null;
+        }
+    }
+
+    /**
+     * Converts an array of package objects into a structured object for JSON output.
+     * 
+     * @param {Object[]} arr - Array of package metadata
+     * @returns {Object}
+     * @private
+     */
+    _toObj(arr) {
+        return Object.fromEntries(arr.map(p => [p.name, { version: p.version }]));
+    }
 }
 
-function toObj(arr) {
-    return Object.fromEntries(arr.map(p => [p.name, { version: p.version }]));
-}
+module.exports = ListCommand;
+
