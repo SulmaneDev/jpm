@@ -19,7 +19,7 @@ class AuditCommand extends BaseCommand {
      * Executes the security audit.
      * 
      * @param {string[]} args - Optional arguments
-     * @param {Object} flags - CLI flags (e.g., --level)
+     * @param {Object} flags - CLI flags (e.g., --level, --fix)
      * @returns {Promise<void>}
      */
     async run(args, flags) {
@@ -34,10 +34,12 @@ class AuditCommand extends BaseCommand {
                 // Handle scoped packages (@org/pkg)
                 if (entry.name.startsWith('@') && entry.isDirectory()) {
                     const scopeDir = path.join(nodeModules, entry.name);
-                    for (const scoped of fs.readdirSync(scopeDir, { withFileTypes: true })) {
-                        const pkgJsonPath = path.join(scopeDir, scoped.name, 'package.json');
-                        this._tryAddPackage(pkgJsonPath, installed);
-                    }
+                    try {
+                        for (const scoped of fs.readdirSync(scopeDir, { withFileTypes: true })) {
+                            const pkgJsonPath = path.join(scopeDir, scoped.name, 'package.json');
+                            this._tryAddPackage(pkgJsonPath, installed);
+                        }
+                    } catch (e) { /* skip */ }
                 } else if (entry.isDirectory() && !entry.name.startsWith('.')) {
                     const pkgJsonPath = path.join(nodeModules, entry.name, 'package.json');
                     this._tryAddPackage(pkgJsonPath, installed);
@@ -55,7 +57,37 @@ class AuditCommand extends BaseCommand {
 
         auditSec.formatAuditResults({ vulnerabilities, stats, total, error });
 
-        if (total > 0) {
+        // Handle --fix
+        if (vulnerabilities.length > 0 && flags.fix) {
+            const fixable = vulnerabilities.filter(v => v.fixedIn && v.package !== 'undefined');
+            if (fixable.length > 0) {
+                this.logger.log('');
+                this.logger.info(`Attempting to fix ${fixable.length} vulnerabilities...`);
+
+                const Engine = require('../core/engine');
+                const engine = new Engine(cwd);
+
+                // Deduplicate and prepare package specs
+                const seen = new Set();
+                const toInstall = [];
+                for (const v of fixable) {
+                    if (seen.has(v.package)) continue;
+                    seen.add(v.package);
+                    toInstall.push({ name: v.package, version: v.fixedIn });
+                }
+
+                try {
+                    await engine.install(toInstall, { flags });
+                    this.logger.success(`Applied security patches for ${toInstall.length} packages.`);
+                } catch (err) {
+                    this.logger.error(`Failed to apply fixes: ${err.message}`);
+                }
+            } else {
+                this.logger.info('No automated fixes available for these vulnerabilities.');
+            }
+        }
+
+        if (total > 0 && !flags.fix) {
             process.exitCode = 1;
         }
     }

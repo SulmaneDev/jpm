@@ -38,10 +38,39 @@ function checkBreaker() {
 }
 
 /**
- * options: { method, headers, timeout, retries, retryDelay, stream }
- * Returns: { status, headers, body } or a raw IncomingMessage if stream:true
+ * options: { method, headers, timeout, retries, retryDelay, stream, body, strict }
+ * Returns: { status, headers, body } or a raw IncomingMessage if stream:true.
+ * Uses Bun.fetch if running in a Bun environment for optimized performance.
+ * 
+ * @param {string} url - Target URL
+ * @param {Object} [options={}] - Request options
+ * @returns {Promise<Object|import('node:http').IncomingMessage>}
  */
-function request(url, options = {}) {
+async function request(url, options = {}) {
+    // ── Native Bun Optimization ──────────────────────────────────────────────
+    if (typeof Bun !== 'undefined' && !options.stream) {
+        try {
+            const res = await Bun.fetch(url, {
+                method: options.method || 'GET',
+                headers: {
+                    'User-Agent': USER_AGENT,
+                    'Accept-Encoding': 'gzip, deflate',
+                    'Accept': 'application/json',
+                    ...(options.headers || {}),
+                },
+                body: options.body,
+                redirect: 'follow',
+            });
+            return {
+                status: res.status,
+                headers: Object.fromEntries(res.headers.entries()),
+                body: await res.text(),
+            };
+        } catch (err) {
+            logger.debug(`Bun.fetch failed, falling back to node:http: ${err.message}`);
+        }
+    }
+
     const {
         method = 'GET',
         headers = {},
@@ -78,6 +107,12 @@ function request(url, options = {}) {
         },
     };
 
+    /**
+     * Executes a single request attempt with retries and circuit breaker logic.
+     * 
+     * @param {number} attemptsLeft - Remaining retry attempts
+     * @returns {Promise<Object|import('node:http').IncomingMessage>}
+     */
     function attempt(attemptsLeft) {
         return new Promise((resolve, reject) => {
             const req = lib.request(reqOptions, (res) => {
@@ -158,7 +193,9 @@ function request(url, options = {}) {
  * @returns {Promise<Object>} Parsed JSON object
  */
 async function getJSON(url, opts = {}) {
-    const { status, body } = await request(url, { ...opts, headers: { Accept: 'application/json', ...(opts.headers || {}) } });
+    const res = await request(url, { ...opts, headers: { Accept: 'application/json', ...(opts.headers || {}) } });
+    const { status, body } = res;
+
     if (status < 200 || status >= 300) {
         const err = new Error(`HTTP ${status}: ${url}`);
         err.status = status;
@@ -166,7 +203,7 @@ async function getJSON(url, opts = {}) {
         throw err;
     }
     try {
-        return JSON.parse(body);
+        return typeof body === 'object' ? body : JSON.parse(body);
     } catch (e) {
         throw new Error(`Invalid JSON from ${url}: ${e.message}\nBody snippet: ${body.slice(0, 200)}`);
     }
@@ -206,27 +243,4 @@ async function download(url, destStream, opts = {}) {
     });
 }
 
-/**
- * Retrieves a list of all packages currently stored in the local cache.
- * 
- * @returns {{ name: string, version: string }[]}
- */
-function list() {
-    const root = cacheRoot();
-    if (!fs.existsSync(root)) return [];
-    const result = [];
-    for (const scopeOrName of fs.readdirSync(root)) {
-        const dir = path.join(root, scopeOrName);
-        if (!fs.statSync(dir).isDirectory()) continue;
-        for (const file of fs.readdirSync(dir)) {
-            if (file.endsWith('.tgz')) {
-                const version = file.replace('.tgz', '');
-                const name = scopeOrName.replace('__SCOPE__', '/');
-                result.push({ name, version });
-            }
-        }
-    }
-    return result;
-}
-
-module.exports = { request, getJSON, download, list };
+module.exports = { request, getJSON, download };

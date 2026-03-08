@@ -1,6 +1,6 @@
 {
   "name": "jpm-pkg",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "Joint Package Manager — Joint, universal, advanced, and blazing fast package manager for Node.js and Bun.",
   "main": "src/index.js",
   "type": "commonjs",
@@ -34,9 +34,7 @@
     "url": "https://github.com/SulmaneDev/jpm/issues"
   },
   "homepage": "https://github.com/SulmaneDev/jpm#readme",
-  "dependencies": {
-    "tar": "^6.2.0"
-  },
+  "dependencies": {},
   "devDependencies": {
     "jest": "^29.7.0"
   },

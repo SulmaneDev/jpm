@@ -55,6 +55,28 @@ class Cache {
     }
 
     /**
+     * Initializes a SQLite database for metadata caching if running in Bun.
+     * 
+     * @returns {Object|null} The SQLite database instance or null
+     * @private
+     */
+    _getSQLite() {
+        if (typeof Bun === 'undefined') return null;
+        if (this._db) return this._db;
+
+        try {
+            const { Database } = require('bun:sqlite');
+            const dbPath = path.join(this.cacheRoot, 'cache.sqlite');
+            mkdirp(this.cacheRoot);
+            this._db = new Database(dbPath);
+            this._db.run('CREATE TABLE IF NOT EXISTS metadata (id TEXT PRIMARY KEY, data TEXT)');
+            return this._db;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    /**
      * Retrieves a package tarball from the cache if it exists.
      * 
      * @param {string} name - Package name
@@ -94,6 +116,13 @@ class Cache {
      * @returns {Promise<void>}
      */
     async setMeta(name, version, meta) {
+        const db = this._getSQLite();
+        if (db) {
+            try {
+                db.run('INSERT OR REPLACE INTO metadata (id, data) VALUES (?, ?)', [`${name}@${version}`, JSON.stringify(meta)]);
+            } catch (e) { /* fallback */ }
+        }
+
         const p = this._metaPath(name, version);
         mkdirp(path.dirname(p));
         fs.writeFileSync(p, JSON.stringify(meta, null, 2), 'utf8');
@@ -107,6 +136,14 @@ class Cache {
      * @returns {Promise<Object|null>} Decoded metadata object, or null if not found/invalid
      */
     async getMeta(name, version) {
+        const db = this._getSQLite();
+        if (db) {
+            try {
+                const row = db.query('SELECT data FROM metadata WHERE id = ?').get(`${name}@${version}`);
+                if (row) return JSON.parse(row.data);
+            } catch (e) { /* fallback */ }
+        }
+
         const p = this._metaPath(name, version);
         try {
             return JSON.parse(fs.readFileSync(p, 'utf8'));

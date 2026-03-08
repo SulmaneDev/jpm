@@ -3,7 +3,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const tar = require('tar');
 const registry = require('./registry');
 const cache = require('./cache');
 const { mkdirp, rimraf, tempDir, symlink } = require('../utils/fs');
@@ -170,28 +169,56 @@ class Installer {
     }
 
     /**
-     * Extracts a tarball to the destination directory.
+     * Extracts a tarball's contents into a target directory.
+     * Prioritizes system 'tar' for speed and to minimize dependency overhead.
      * 
-     * @param {string} tgzPath - Path to the tarball file
+     * @param {string} tgzPath - Absolute path to the source .tgz file
      * @param {string} destDir - Target directory for extraction
-     * @param {string} name - Package name for logging
-     * @param {string} version - Package version for logging
+     * @param {string} name - Package name for error context
+     * @param {string} version - Package version for error context
+     * @returns {Promise<void>}
      * @protected
      */
     async _extract(tgzPath, destDir, name, version) {
         rimraf(destDir);
         mkdirp(destDir);
 
-        const absoluteDest = path.resolve(destDir);
+        try {
+            // Attempt to use system 'tar' (available on Linux, macOS, and Win 10+)
+            const { spawnSync } = require('node:child_process');
+            const result = spawnSync('tar', [
+                '-xzf', tgzPath,
+                '-C', destDir,
+                '--strip-components=1'
+            ], { shell: true, stdio: 'pipe' });
 
+            if (result.status === 0) {
+                logger.verbose(`extracted ${name}@${version} via system tar`);
+                return;
+            }
+            logger.debug(`System tar failed (code ${result.status}): ${result.stderr.toString()}`);
+        } catch (err) {
+            logger.debug(`System tar not found or failed: ${err.message}`);
+        }
+
+        // Fallback to JS-based 'tar' package
+        logger.verbose(`falling back to 'tar' package for ${name}@${version}`);
+        let tar;
+        try {
+            tar = require('tar');
+        } catch (err) {
+            throw new Error(`Extraction failed: system 'tar' not available and 'tar' package not installed. ${err.message}`);
+        }
+
+        const absoluteDest = path.resolve(destDir);
         await tar.extract({
             file: tgzPath,
             cwd: destDir,
             strip: 1,
-            filter: (p, stat) => {
+            filter: (p) => {
                 const fullPath = path.resolve(destDir, p);
                 if (!fullPath.startsWith(absoluteDest)) {
-                    logger.error(`Zip Slip security violation blocked: ${p} in ${name}@${version}`);
+                    logger.error(`Zip Slip security violation blocked in ${name}@${version}: ${p}`);
                     return false;
                 }
                 return true;
@@ -260,6 +287,7 @@ class Installer {
      * Creates symbolic links for binary executables defined in package metadata.
      * 
      * @param {Object[]} packages - Array of resolved package metadata
+     * @returns {Promise<void>}
      * @protected
      */
     async _linkBins(packages) {
@@ -285,7 +313,9 @@ class Installer {
                 try {
                     symlink(src, dest);
                     fs.chmodSync(src, 0o755);
-                } catch { }
+                } catch (err) {
+                    logger.warn(`Failed to link binary "${binName}" for ${installName}: ${err.message}`);
+                }
             }
         }
     }

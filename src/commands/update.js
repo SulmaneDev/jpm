@@ -1,7 +1,6 @@
 'use strict';
 
 const BaseCommand = require('./base-command');
-const PackageJSON = require('../core/package-json');
 const registry = require('../core/registry');
 const semver = require('../utils/semver');
 const { Spinner } = require('../utils/progress');
@@ -24,8 +23,10 @@ class UpdateCommand extends BaseCommand {
      */
     async run(args, flags) {
         const cwd = process.cwd();
-        const pkgJson = PackageJSON.fromDir(cwd);
-        const allDeps = pkgJson.allDeps();
+        const Engine = require('../core/engine');
+        const engine = new Engine(cwd);
+
+        const allDeps = engine.pkgJson.allDeps();
 
         const targets = args.length
             ? args.reduce((acc, n) => { if (allDeps[n]) acc[n] = allDeps[n]; return acc; }, {})
@@ -91,12 +92,12 @@ class UpdateCommand extends BaseCommand {
 
         this.logger.info(`Updating ${outdatedPkgs.length} package(s)...`);
 
-        // Use dynamic import/require to avoid circular dependency with InstallCommand
-        const InstallCommand = require('./install');
-        const installInstance = new InstallCommand();
+        const pkgArgs = outdatedPkgs.map(p => ({
+            name: p.Package,
+            version: p.Latest
+        }));
 
-        const pkgArgs = outdatedPkgs.map(p => `${p.Package}@${p.Latest}`);
-        await installInstance.run(pkgArgs, flags);
+        await engine.install(pkgArgs, { flags });
     }
 }
 

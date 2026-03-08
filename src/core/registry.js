@@ -149,6 +149,7 @@ class Registry {
      * 
      * @param {Object.<string, string[]>} requires - Map of package names to lists of required versions
      * @returns {Promise<Object>} Audit report containing vulnerabilities, advisories, and metadata
+     * @throws {Error} If the registry request fails or returns an invalid response
      */
     async fetchAdvisories(requires) {
         const url = `https://registry.npmjs.org/-/npm/v1/security/audits/quick`;
@@ -167,22 +168,29 @@ class Registry {
             dependencies: packages,
         });
 
-        const res = await request(url, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Content-Length': Buffer.byteLength(body),
-            },
-            body,
-            timeout: 30_000,
-            retries: 2,
-            strict: true, // Security: Always use HTTPS for audits
-        });
-
         try {
+            const res = await request(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Content-Length': Buffer.byteLength(body),
+                },
+                body,
+                timeout: 30_000,
+                retries: 2,
+                strict: true, // Security: Always use HTTPS for audits
+            });
+
+            if (res.status < 200 || res.status >= 300) {
+                throw new Error(`Registry audit failed with status ${res.status}: ${res.body.slice(0, 200)}`);
+            }
+
             return JSON.parse(res.body);
-        } catch {
-            return { advisories: {}, metadata: {} };
+        } catch (err) {
+            logger.error(`Security audit request failed: ${err.message}`);
+            // Return empty structure to allow the process to continue if non-critical,
+            // but log the error clearly.
+            return { advisories: {}, metadata: {}, error: err.message };
         }
     }
 }

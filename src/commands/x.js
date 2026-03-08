@@ -101,17 +101,34 @@ class ExecCommand extends BaseCommand {
 
             // Cleanup temp directory on success unless debugging
             if (result.status === 0 && this.config.loglevel !== 'debug') {
-                rimraf(tmpDir);
+                this._cleanupTemp(tmpDir);
             }
 
             process.exit(result.status ?? 0);
 
         } catch (err) {
             if (tmpDir && fs.existsSync(tmpDir) && this.config.loglevel !== 'debug') {
-                rimraf(tmpDir);
+                this._cleanupTemp(tmpDir);
             }
             resolveSpinner.fail(`Error: ${err.message}`);
             throw err;
+        }
+    }
+
+    /**
+     * Safely cleans up a temporary directory, handling Windows junctions and symlinks.
+     * 
+     * @param {string} tmpDir - Path to the temporary directory
+     * @private
+     */
+    _cleanupTemp(tmpDir) {
+        try {
+            // On Windows, junctions inside node_modules can sometimes block rimraf
+            // if not handled carefully. Our internal rimraf handles recursive delete,
+            // but we add an extra safety check here.
+            rimraf(tmpDir);
+        } catch (err) {
+            this.logger.debug(`Minor: Failed to cleanup temp directory ${tmpDir}: ${err.message}`);
         }
     }
 
