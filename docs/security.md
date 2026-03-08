@@ -27,6 +27,14 @@ Before running any script, JPM's `scan` command can analyze the script content f
 - System modification (unauthorized `sudo`, `rm`)
 - Obfuscated payloads
 
-## 4. Transactional Reliability
+## 4. Interactive Security Patching (`--fix`)
+
+Vulnerabilities discovered during a `jpm scan` can be automatically patched. By running `jpm scan --fix`, JPM will:
+
+- Identify packages with known vulnerabilities that have a available patch (higher version).
+- Automatically upgrade these dependencies in your `package.json` and `jpm.lock`.
+- Re-run the installation to ensure your project is immediately protected.
+
+## 5. Transactional Reliability
 
 JPM treats every installation as a transaction. If a download fails, an integrity check misses, or a script errors out, JPM **rolls back** the changes to the `node_modules` directory. You will never be left with a partial or corrupted installation.

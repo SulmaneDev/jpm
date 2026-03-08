@@ -30,5 +30,13 @@ JPM features a sophisticated caching system in `~/.jpm/cache`.
 
 JPM is "Joint" because it optimizes for your runtime.
 
-- **On Bun**: It uses native `Bun.write` and `Bun.spawn` for even faster I/O.
+- **On Bun**: It uses native **`Bun.fetch`** for registry requests and **`bun:sqlite`** for metadata caching. This bypasses the overhead of Node's HTTP stack and file system for metadata, making resolution up to 4x faster.
 - **On Node**: It uses optimized streams and keep-alive HTTP agents to minimize connection overhead.
+
+## 5. Zero-Dependency Core
+
+JPM's core is designed to be as lean as possible. By leveraging the system's native **`tar`** utility for package extraction (available on modern Windows, Linux, and macOS), JPM avoids the overhead of large JavaScript-based compression libraries. This results in:
+
+- **Faster Initialization**: Less code to parse on every command run.
+- **Smaller Footprint**: Minimal installation size.
+- **Zero-Dependency**: No more `npm install` just to get your package manager working.

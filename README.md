@@ -12,125 +12,96 @@
 
 ### ⚡ Blazing Performance
 
-- **Environment-Aware**: Leverages native Bun I/O (`Bun.write`, `Bun.spawn`) for near-zero overhead or high-performance Node.js streams.
+- **Environment-Aware**: Leverages native Bun I/O (`Bun.write`, `Bun.spawn`) or high-performance Node.js streams.
+- **Native Bun Optimizations**: Uses `Bun.fetch` for registry requests and **SQLite-based metadata caching** for lightning-fast resolution in Bun runtimes.
 - **Worker-Pool Installation**: Uses a continuous worker-pool architecture for maximum parallel download and extraction speeds.
-- **Platform-Aware Filtering**: Only downloads optional binaries (like native modules) compatible with your specific OS and CPU, saving bandwidth and disk space.
-- **Incremental Core**: Intelligent caching and symlinking system ensures you never re-download the same package twice.
+- **Zero-Dependency Core**: Uses system `tar` for extraction, making JPM footprint smaller and faster to install.
+- **Platform-Aware Filtering**: Only downloads optional binaries compatible with your specific OS and CPU.
 
 ### 🛡️ Hardened Security
 
+- **Interactive Security Patching**: `jpm scan --fix` automatically upgrades vulnerable packages to their patched versions.
 - **Zip Slip Protection**: Built-in path traversal filtering prevents malicious packages from writing files outside their `node_modules`.
 - **Strict HTTPS & Integrity**: Enforces mandatory SHA-512 integrity checks and strict SSL for all registry metadata and audits.
-- **Malicious Script Detection**: Scans `preinstall`/`postinstall` scripts for suspicious patterns (e.g., unauthorized `curl` or `rm` commands).
-- **Transactional Installs**: Automatic rollbacks ensure a failed installation never leaves your project in a corrupted state.
+- **Malicious Script Detection**: Scans `preinstall`/`postinstall` scripts for suspicious patterns.
+- **Transactional Installs**: Automatic rollbacks prevent project corruption on failure.
 
 ### 📦 Handy CLI
 
-- **Simplified Command Set**: Intuitive, easy-to-remember verbs like `get`, `drop`, and `syn`.
-- **Remote Execution (`x`)**: Run any package without installing it (equivalent to `npx`), with built-in security auditing before every run.
-- **Hive (Workspaces)**: First-class monorepo support with seamless discovery and cross-workspace script broad casting.
+- **Simplified Command Set**: Intuitive verbs like `get`, `drop`, and `syn`.
+- **Project Scaffolding**: `jpm create` enables instant project setup from standard templates.
+- **Dependency Diagnostics**: `jpm why` tells you exactly who brought in a specific package.
+- **Environment Health**: `jpm doctor` verifies registry connectivity and cache permissions.
 
 ---
 
 ## 📦 Handy Commands Guide
 
-| Command            | Alias                 | Description                                  |
-| :----------------- | :-------------------- | :------------------------------------------- |
-| `jpm get <pkg>`    | `i`, `add`, `install` | Install packages and update `package.json`   |
-| `jpm drop <pkg>`   | `remove`, `rm`        | Remove packages and cleanup binaries         |
-| `jpm syn`          |                       | Synchronize all dependencies (clean install) |
-| `jpm x <pkg>`      | `exec`                | Execute remote package binary (like `npx`)   |
-| `jpm run <script>` | `do`                  | Execute a script defined in `package.json`   |
-| `jpm scan`         | `audit`               | Deep security and vulnerability audit        |
-| `jpm up`           | `upgrade`             | Upgrade dependencies to safe latest versions |
-| `jpm peek`         | `ls`, `list`          | Inspect installed tree and metadata          |
-| `jpm info <pkg>`   | `view`                | Detailed package intelligence/manifest       |
-| `jpm hive`         | `workspace`           | Manage workspace clusters (Monorepos)        |
-| `jpm setup`        | `init`                | Initialize a new JPM project                 |
-| `jpm cache`        |                       | Manage the local high-speed cache            |
+| Command             | Alias                 | Description                                  |
+| :------------------ | :-------------------- | :------------------------------------------- |
+| `jpm get <pkg>`     | `i`, `add`, `install` | Install packages and update `package.json`   |
+| `jpm drop <pkg>`    | `remove`, `rm`        | Remove packages and cleanup binaries         |
+| `jpm syn`           |                       | Synchronize all dependencies (clean install) |
+| `jpm scan [--fix]`  | `audit`, `scan --fix` | Security audit & interactive patching        |
+| `jpm create <tmpl>` |                       | Scaffold projects (e.g., `jpm create vite`)  |
+| `jpm doctor`        |                       | Check environment and registry health        |
+| `jpm why <pkg>`     |                       | Trace dependency resolution paths            |
+| `jpm link [pkg]`    |                       | Local package link development               |
+| `jpm rebuild`       |                       | Re-run lifecycle (postinstall) scripts       |
+| `jpm x <pkg>`       | `exec`                | Execute remote package binary (like `npx`)   |
+| `jpm up`            | `upgrade`             | Upgrade dependencies to safe latest versions |
+| `jpm peek`          | `ls`, `list`          | Inspect installed tree and metadata          |
 
 ---
 
 ## 🛠️ Detailed Usage
 
-### Installing Packages
+### Scaffolding projects (`jpm create`)
+
+JPM follows the standard `create-` convention. Running `jpm create vite` is equivalent to running `create-vite`.
 
 ```bash
-jpm get express             # Add latest express
-jpm get lodash@4.17.21      # Specific version
-jpm get jest -D             # Add to devDependencies
-jpm get --save-exact        # Pin versions precisely
+jpm create vite my-app -- --template react
 ```
 
-### Remote Execution (`jpm x`)
+### Security Patching (`jpm scan --fix`)
 
-Run packages without global installation. JPM performs a security scan on the remote package before it touches your machine.
+Tired of manually updating vulnerable packages? Let JPM handle it.
 
 ```bash
-jpm x create-next-app@latest my-app
-jpm x vite@latest --open
+jpm scan --fix
 ```
 
-### Monorepo Management (`jpm hive`)
+### Dependency Tracing (`jpm why`)
 
-JPM makes managing complex project clusters effortless.
+Understand exactly why `lodash` (or any other package) is in your `node_modules`.
 
 ```bash
-jpm hive list               # See all workspace packages
-jpm hive run build          # Build every package in the hive
-jpm hive run test -f app    # Run tests only in matching packages
+jpm why lodash
+```
+
+### Local Linking (`jpm link`)
+
+Develop local packages side-by-side.
+
+```bash
+# In the package directory
+jpm link
+
+# In the consumer project
+jpm link my-local-package
 ```
 
 ---
 
-## 🔐 Security Deep Dive
-
-### Zip Slip Protection
-
-JPM's extractor implements a robust `filter` that resolves every file in a tarball. If a package tries to extract a file outside it's legitimate directory (using `../` hacks), JPM kills the process and reports a security violation.
-
-### Insecure Protocol Blocking
-
-In JPM's strict mode (enabled for all audits), any communication over plain `http:` is blocked to prevent man-in-the-middle attacks.
-
-### Mandatory Integrity
-
-JPM refuses to install any package that doesn't provide a valid `sha512` or `shasum` from the registry, preventing "Trust-on-First-Use" (TOFU) vulnerabilities.
-
----
-
-## ⚙️ Configuration
-
-JPM is configured via `.jpmrc` files (INI format).
-
-**Hierarchy:**
-
-1. CLI Flags (`--registry`, `--fast`)
-2. Project `.jpmrc`
-3. User `~/.jpmrc`
-
-**Recommended `.jpmrc`:**
-
-```ini
-registry=https://registry.npmjs.org/
-save-exact=false
-audit-level=moderate
-loglevel=info
-# Use --fast globally for speed, but manually verify integrity
-# fast=true
-```
-
----
-
-## � Installation
+## 🔐 Installation
 
 To build JPM from source and link it to your system:
 
 ```bash
 git clone https://github.com/whomaderules/jpm.git
 cd jpm
-npm install       # Install build-time dependency (tar)
-npm link          # Link JPM to your global path
+npm link          # JPM is zero-dependency!
 ```
 
 ---

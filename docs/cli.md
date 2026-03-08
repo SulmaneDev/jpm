@@ -25,6 +25,10 @@ Synchronizes your project based on the lockfile. This is the command to run afte
 
 Upgrades dependencies while respecting your semver ranges.
 
+### `rebuild [packages]`
+
+Re-runs lifecycle scripts (`preinstall`, `install`, `postinstall`) for installed packages. This is helpful when native module builds fail or post-install scripts need a re-run.
+
 ---
 
 ## Execution
@@ -48,6 +52,10 @@ Executes a script from `package.json`. Alias: `do`.
 
 Shows the installed dependency tree. Alias: `ls`, `list`.
 
+### `why <package>`
+
+Traces and displays all dependency paths leading to a specific package, explaining why it was installed.
+
 ### `find <query>`
 
 Search for packages on the npm registry. Alias: `search`.
@@ -60,9 +68,26 @@ Get detailed information about any package. Alias: `view`, `show`.
 
 ## Management
 
-### `scan`
+### `scan [--fix]`
 
 Deep security audit of your project. Checks for vulnerabilities and integrity issues. Alias: `audit`.
+
+- **`--fix`**: Automatically attempts to patch vulnerabilities by upgrading affected packages to their fixed versions.
+
+### `create <template> [args]`
+
+Scaffold a new project using a `create-` template (e.g., `jpm create vite`).
+
+### `doctor`
+
+Performs an environment health check, verifying Node.js/Bun versions, registry connectivity, and cache permissions.
+
+### `link [package]`
+
+Facilitates local package development.
+
+- `jpm link`: Run in a package directory to register it globally.
+- `jpm link <pkg>`: Run in a consumer project to use the globally linked package.
 
 ### `config <get|set>`
 

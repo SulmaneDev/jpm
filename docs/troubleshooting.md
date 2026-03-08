@@ -2,6 +2,16 @@
 
 Encountered an issue with JPM? Here are some common problems and their solutions.
 
+## 0. Run `jpm doctor`
+
+The first step in any troubleshooting process should be to run the **`jpm doctor`** command. This utility will:
+
+- Check your registry connectivity.
+- Verify Node.js and Bun versions.
+- Check cache directory permissions and environment variables.
+
+If `jpm doctor` reports issues, fix them before proceeding.
+
 ## 1. "Unknown command" error
 
 If you see `error Unknown command: "x"`, it means you are using an older version of JPM.
