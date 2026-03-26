@@ -32,6 +32,7 @@ const config = require('../src/utils/config');
 if (flags.loglevel) config.setCLI({ loglevel: flags.loglevel });
 if (flags.registry) config.setCLI({ registry: flags.registry });
 if (flags.silent) config.setCLI({ loglevel: 'silent' });
+if (flags.verbose || flags.v) config.setCLI({ loglevel: 'verbose' });
 
 const logger = require('../src/utils/logger');
 logger.setLevel(config.loglevel);
@@ -113,6 +114,9 @@ function showHelp() {
         '  ' + c.cyan('up [pkg ...]') + '       Upgrade project dependencies',
         '  ' + c.cyan('rebuild [pkg]') + '      Re-run lifecycle scripts',
         '  ' + c.cyan('x <pkg> [args]') + '     Execute remote package binary',
+        '  ' + c.cyan('verify') + '             Check node_modules consistency against lockfile',
+        '  ' + c.cyan('prune') + '              Remove extraneous packages from node_modules',
+        '  ' + c.cyan('bench [cmd]') + '        Measure execution time of a command (e.g., syn)',
         '',
         c.bold('Discovery & Metadata:'),
         '  ' + c.cyan('peek') + '               Inspect installed dependency tree',
@@ -162,6 +166,9 @@ const COMMANDS = {
     find: () => require('../src/commands/search'),
     info: () => require('../src/commands/info'),
     x: () => require('../src/commands/x'),
+    verify: () => require('../src/commands/verify'),
+    prune: () => require('../src/commands/prune'),
+    bench: () => require('../src/commands/bench'),
     hive: () => workspaceCommand,
 
     // Aliases & Standard Compatibility

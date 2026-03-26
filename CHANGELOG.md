@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-03-26
+
+### Added
+
+- **Verify Command**: New `jpm verify` command to check environment consistency against the `jpm-lock.json` file. It reports missing, mismatched, and extraneous packages.
+- **Prune Command**: New `jpm prune` command to automatically scan and silently remove extraneous packages from `node_modules` that are not listed in the lockfile.
+- **Bench Command**: New `jpm bench` utility to accurately measure and report the execution time (down to the millisecond) of any JPM command (e.g., `jpm bench syn`).
+- **Engine Methods**: Added `verifyEnvironment()` to the `Engine` class to act as the single source of truth for analyzing `node_modules` strictly against `jpm-lock.json`.
+
 ## [1.1.0] - 2026-03-06
 
 ### Changed

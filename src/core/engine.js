@@ -1,6 +1,7 @@
 'use strict';
 
 const path = require('node:path');
+const fs = require('node:fs');
 const Resolver = require('./resolver');
 const Installer = require('./installer');
 const Lockfile = require('./lockfile');
@@ -116,6 +117,72 @@ class Engine {
         await this.installer.installAll(fakeMap, { dryRun: flags['dry-run'], flags });
 
         spinner.succeed(`Installed ${lockData.length} packages`);
+    }
+
+    /**
+     * Compares the lockfile with the actual node_modules on disk.
+     * Identifies missing, mismatched, and extraneous packages.
+     * 
+     * @returns {Object} { missing: [], mismatched: [], extraneous: [] }
+     */
+    verifyEnvironment() {
+        const lockData = this.lockfile.allPackages();
+        const nodeModules = path.join(this.projectRoot, 'node_modules');
+
+        const report = {
+            missing: [],
+            mismatched: [],
+            extraneous: []
+        };
+
+        if (!fs.existsSync(nodeModules)) {
+            report.missing = lockData.map(p => ({ name: p.name, version: p.version }));
+            return report;
+        }
+
+        const installedMap = new Map();
+
+        const scanDir = (dir, scope = '') => {
+            if (!fs.existsSync(dir)) return;
+            const entries = fs.readdirSync(dir, { withFileTypes: true });
+            for (const entry of entries) {
+                if (entry.name.startsWith('.')) continue;
+                if (entry.name.startsWith('@') && entry.isDirectory()) {
+                    scanDir(path.join(dir, entry.name), entry.name);
+                    continue;
+                }
+                if (entry.isDirectory()) {
+                    const pkgName = scope ? `${scope}/${entry.name}` : entry.name;
+                    const pkgPath = path.join(dir, entry.name, 'package.json');
+                    if (fs.existsSync(pkgPath)) {
+                        try {
+                            const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+                            installedMap.set(pkgName, pkg.version);
+                        } catch (err) { }
+                    }
+                }
+            }
+        };
+
+        scanDir(nodeModules);
+
+        // Check for missing and mismatched
+        for (const pkg of lockData) {
+            const installedVersion = installedMap.get(pkg.name);
+            if (!installedVersion) {
+                report.missing.push({ name: pkg.name, version: pkg.version });
+            } else if (installedVersion !== pkg.version) {
+                report.mismatched.push({ name: pkg.name, expected: pkg.version, actual: installedVersion });
+            }
+            installedMap.delete(pkg.name);
+        }
+
+        // Whatever remains in installedMap is extraneous
+        for (const [name, version] of installedMap) {
+            report.extraneous.push({ name, version });
+        }
+
+        return report;
     }
 }
 

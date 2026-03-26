@@ -51,6 +51,9 @@
 | `jpm x <pkg>`       | `exec`                | Execute remote package binary (like `npx`)   |
 | `jpm up`            | `upgrade`             | Upgrade dependencies to safe latest versions |
 | `jpm peek`          | `ls`, `list`          | Inspect installed tree and metadata          |
+| `jpm verify`        |                       | Verify environment consistency               |
+| `jpm prune`         |                       | Remove extraneous packages                   |
+| `jpm bench`         |                       | Benchmark command execution time             |
 
 ---
 

@@ -1,3 +1,4 @@
+
 'use strict';
 
 const isTTY = process.stdout.isTTY;
@@ -42,7 +43,7 @@ class Spinner {
     fail(text) {
         this._stop();
         const msg = text || this.text;
-        process.stderr.write(`\r\x1b[31m✖\x1b[0m ${msg}\x1b[K\n`);
+        process.stderr.write(`\r\x1b[31m✘\x1b[0m ${msg}\x1b[K\n`);
         return this;
     }
 

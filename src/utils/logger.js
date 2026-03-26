@@ -2,18 +2,18 @@
 
 // ANSI color codes — no external dep
 const C = {
-  reset:   '\x1b[0m',
-  bold:    '\x1b[1m',
-  dim:     '\x1b[2m',
-  red:     '\x1b[31m',
-  green:   '\x1b[32m',
-  yellow:  '\x1b[33m',
-  blue:    '\x1b[34m',
+  reset: '\x1b[0m',
+  bold: '\x1b[1m',
+  dim: '\x1b[2m',
+  red: '\x1b[31m',
+  green: '\x1b[32m',
+  yellow: '\x1b[33m',
+  blue: '\x1b[34m',
   magenta: '\x1b[35m',
-  cyan:    '\x1b[36m',
-  white:   '\x1b[37m',
-  gray:    '\x1b[90m',
-  bgRed:   '\x1b[41m',
+  cyan: '\x1b[36m',
+  white: '\x1b[37m',
+  gray: '\x1b[90m',
+  bgRed: '\x1b[41m',
   bgGreen: '\x1b[42m',
 };
 
@@ -34,39 +34,47 @@ function setLevel(level) {
 }
 
 const prefix = {
-  error:   colorize(C.red,     '✖ error'),
-  warn:    colorize(C.yellow,  '⚠ warn '),
-  info:    colorize(C.cyan,    'ℹ info '),
-  success: colorize(C.green,   '✔ '),
-  verbose: colorize(C.gray,    '… verb '),
-  debug:   colorize(C.magenta, '⬡ debug'),
+  error: colorize(C.bgRed + C.white, ' jpm ') + colorize(C.red, ' ERR! '),
+  warn: colorize(C.bgYellow + C.black, ' jpm ') + colorize(C.yellow, ' WARN '),
+  info: colorize(C.bgBlue + C.white, ' jpm ') + colorize(C.blue, ' info '),
+  success: colorize(C.bgGreen + C.white, ' jpm ') + colorize(C.green, ' success '),
+  verbose: colorize(C.gray, 'jpm verb '),
+  debug: colorize(C.magenta, 'jpm debug '),
+  notice: colorize(C.cyan, 'jpm notice '),
 };
 
 const logger = {
   setLevel,
 
   error(...args) {
-    if (logLevel >= 1) process.stderr.write(`${prefix.error}  ${args.join(' ')}\n`);
+    if (logLevel >= 1) {
+      const msg = args.map(arg => (arg instanceof Error ? (logLevel >= 4 ? arg.stack : arg.message) : arg)).join(' ');
+      process.stderr.write(`${prefix.error}${msg}\n`);
+    }
   },
 
   warn(...args) {
-    if (logLevel >= 2) process.stderr.write(`${prefix.warn}  ${args.join(' ')}\n`);
+    if (logLevel >= 2) process.stderr.write(`${prefix.warn}${args.join(' ')}\n`);
   },
 
   info(...args) {
-    if (logLevel >= 3) process.stdout.write(`${prefix.info}  ${args.join(' ')}\n`);
+    if (logLevel >= 3) process.stdout.write(`${prefix.info}${args.join(' ')}\n`);
   },
 
   success(...args) {
     if (logLevel >= 3) process.stdout.write(`${prefix.success}${args.join(' ')}\n`);
   },
 
+  notice(...args) {
+    if (logLevel >= 3) process.stdout.write(`${prefix.notice}${args.join(' ')}\n`);
+  },
+
   verbose(...args) {
-    if (logLevel >= 4) process.stdout.write(`${prefix.verbose}  ${args.join(' ')}\n`);
+    if (logLevel >= 4) process.stdout.write(`${prefix.verbose}${args.join(' ')}\n`);
   },
 
   debug(...args) {
-    if (logLevel >= 5) process.stdout.write(`${prefix.debug}  ${args.join(' ')}\n`);
+    if (logLevel >= 5) process.stdout.write(`${prefix.debug}${args.join(' ')}\n`);
   },
 
   // Plain output — always printed unless silent
@@ -102,9 +110,9 @@ const logger = {
   tree(node, prefix_ = '', isLast = true) {
     if (logLevel < 3) return;
     const connector = isLast ? '└── ' : '├── ';
-    const ext       = isLast ? '    ' : '│   ';
+    const ext = isLast ? '    ' : '│   ';
     const name = colorize(C.bold, node.name);
-    const ver  = colorize(C.gray, `@${node.version}`);
+    const ver = colorize(C.gray, `@${node.version}`);
     process.stdout.write(`${prefix_}${prefix_ ? connector : ''}${name}${ver}\n`);
     const children = node.dependencies || [];
     children.forEach((child, i) => {
@@ -114,14 +122,15 @@ const logger = {
 
   // Colorize helpers exposed for other modules
   c: {
-    red:     (t) => colorize(C.red, t),
-    green:   (t) => colorize(C.green, t),
-    yellow:  (t) => colorize(C.yellow, t),
-    blue:    (t) => colorize(C.blue, t),
-    cyan:    (t) => colorize(C.cyan, t),
-    gray:    (t) => colorize(C.gray, t),
-    bold:    (t) => colorize(C.bold, t),
+    red: (t) => colorize(C.red, t),
+    green: (t) => colorize(C.green, t),
+    yellow: (t) => colorize(C.yellow, t),
+    blue: (t) => colorize(C.blue, t),
+    cyan: (t) => colorize(C.cyan, t),
+    gray: (t) => colorize(C.gray, t),
+    bold: (t) => colorize(C.bold, t),
     magenta: (t) => colorize(C.magenta, t),
+    black: (t) => colorize(C.black, t),
   },
 };
 
